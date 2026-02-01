@@ -1,8 +1,6 @@
 import os
 import imaplib
-import email
 import requests
-from email.header import decode_header
 
 # Load Secrets
 GMAIL_USER = os.environ["GMAIL_USER"]
@@ -10,61 +8,54 @@ GMAIL_PASS = os.environ["GMAIL_PASSWORD"]
 BOT_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
-    requests.post(url, data=payload)
+def debug_print(msg):
+    print(f"🧐 DEBUG: {msg}")
 
-def check_mail():
-    print("Connecting to Gmail...")
+def test_telegram():
+    debug_print("--- STEP 1: TESTING TELEGRAM ---")
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": "🚨 DIAGNOSTIC TEST: I am alive!"}
+    
+    try:
+        response = requests.post(url, data=payload)
+        debug_print(f"Telegram API Status: {response.status_code}")
+        debug_print(f"Telegram API Response: {response.text}")
+        
+        if response.status_code == 200:
+            print("✅ TELEGRAM IS WORKING!")
+        else:
+            print("❌ TELEGRAM FAILED. Check your Chat ID or Token.")
+    except Exception as e:
+        print(f"❌ TELEGRAM ERROR: {e}")
+
+def test_gmail():
+    debug_print("\n--- STEP 2: TESTING GMAIL ---")
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(GMAIL_USER, GMAIL_PASS)
-        mail.select("inbox")
-
-        # --- THE FIX IS HERE ---
-        # We removed the brackets around 'UNREAD'
-        status, messages = mail.search(None, 'UNREAD')
+        print("✅ Gmail Login Success!")
         
-        # Check if we got any data back
-        if not messages or messages[0] == b'':
-            print("No new emails.")
-            return
-
+        mail.select("inbox")
+        
+        # Search for ANY email (Read or Unread) just to test connection
+        status, messages = mail.search(None, 'ALL')
         email_ids = messages[0].split()
-        print(f"Found {len(email_ids)} new emails!")
-
-        for e_id in email_ids:
-            _, msg_data = mail.fetch(e_id, "(RFC822)")
-            for response_part in msg_data:
-                if isinstance(response_part, tuple):
-                    msg = email.message_from_bytes(response_part[1])
-                    
-                    # Decode Subject
-                    subject, encoding = decode_header(msg["Subject"])[0]
-                    if isinstance(subject, bytes):
-                        subject = subject.decode(encoding if encoding else "utf-8")
-                    
-                    # Get Sender
-                    sender = msg.get("From")
-                    
-                    alert_text = f"🔔 <b>NEW EMAIL!</b>\n\n<b>From:</b> {sender}\n<b>Subject:</b> {subject}"
-                    send_telegram(alert_text)
-                    print(f"Alert sent: {subject}")
-
+        
+        count = len(email_ids)
+        print(f"✅ Gmail Connection Good! Found {count} total emails in your Inbox.")
+        
+        if count == 0:
+            print("⚠️ Inbox is empty? (This is rare)")
+        
         mail.close()
         mail.logout()
         
     except Exception as e:
-        print(f"Error: {e}")
-        # Only send alert if it's NOT a search error (to avoid spamming you)
-        if "SEARCH" not in str(e):
-            send_telegram(f"⚠️ Bot Error: {e}")
+        print(f"❌ GMAIL FAILED: {e}")
 
 if __name__ == "__main__":
-    check_mail()
+    print("🚀 STARTING DIAGNOSTIC MODE...")
+    test_telegram()
+    test_gmail()
+    print("🏁 DIAGNOSTIC FINISHED.")
     
