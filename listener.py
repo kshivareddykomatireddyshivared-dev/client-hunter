@@ -49,7 +49,7 @@ def ask_brain(email_body, sender_name):
     
     try:
         completion = client.chat.completions.create(
-            model="deepseek-r1-distill-llama-70b",  # <--- Fixed comma here
+            model="deepseek-r1-distill-llama-70b",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Client Email: {email_body}"}
@@ -68,8 +68,10 @@ def check_mail():
         mail.login(GMAIL_USER, GMAIL_PASS)
         mail.select("inbox")
 
-        # Search UNREAD only
+        # --- THE FIX IS HERE ---
+        # Notice: No brackets around 'UNREAD'
         status, messages = mail.search(None, 'UNREAD')
+        
         if not messages or messages[0] == b'':
             print("No new mail.")
             return
@@ -127,4 +129,3 @@ def check_mail():
 
 if __name__ == "__main__":
     check_mail()
-    
