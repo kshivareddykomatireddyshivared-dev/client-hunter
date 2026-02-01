@@ -25,13 +25,17 @@ SENSITIVE_WORDS = ["otp", "verification code", "password reset", "bank", "debit"
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
-    requests.post(url, data=payload)
+    # REMOVED 'parse_mode': 'HTML' to prevent crashing on symbols
+    payload = {"chat_id": CHAT_ID, "text": message}
+    
+    try:
+        response = requests.post(url, data=payload)
+        # PRINT THE SERVER RESPONSE (So we can see if Telegram says "Error")
+        print(f"📨 Telegram Sent. Server Reply: {response.text}")
+    except Exception as e:
+        print(f"❌ Telegram Fail: {e}")
 
 def ask_brain(email_body, sender_name):
-    """
-    Sends the email content to DeepSeek to generate a smart strategy.
-    """
     system_prompt = f"""
     You are the AI Secretary for {MY_NAME}, a professional Scriptwriter.
     Your goal is to convert leads into WhatsApp conversations.
@@ -68,7 +72,6 @@ def check_mail():
         mail.login(GMAIL_USER, GMAIL_PASS)
         mail.select("inbox")
 
-        # Search for UNSEEN (Unread) emails
         status, messages = mail.search(None, 'UNSEEN')
         
         if not messages or messages[0] == b'':
@@ -76,26 +79,20 @@ def check_mail():
             return
 
         email_ids = messages[0].split()
-        
-        # Limit to checking the last 10 emails to prevent timeouts if you have thousands
-        # You can remove [-10:] if you want to check ALL of them.
-        recent_email_ids = email_ids[-10:] 
+        # Check last 5 emails to be safe
+        recent_email_ids = email_ids[-5:] 
         
         for e_id in recent_email_ids:
             try:
-                # Fetch Email
                 _, msg_data = mail.fetch(e_id, "(RFC822)")
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
                         msg = email.message_from_bytes(response_part[1])
                         
-                        # Get Subject
                         subject, encoding = decode_header(msg["Subject"])[0]
                         if isinstance(subject, bytes):
                             subject = subject.decode(encoding if encoding else "utf-8")
                         
-                        # --- THE FIX IS HERE ---
-                        # We added errors="ignore" so it skips weird characters instead of crashing
                         body = ""
                         if msg.is_multipart():
                             for part in msg.walk():
@@ -109,28 +106,26 @@ def check_mail():
                             if payload:
                                 body = payload.decode("utf-8", errors="ignore")
 
-                        # --- 🛡️ PRIVACY CHECK ---
                         if any(s.lower() in body.lower() for s in SENSITIVE_WORDS):
                             print(f"🔒 Sensitive email detected ({subject}). Ignoring.")
                             continue 
 
-                        # --- 🧠 AI ANALYSIS ---
                         sender = msg.get("From")
                         print(f"Analyzing email from: {sender}")
                         
                         ai_draft = ask_brain(body, sender)
                         
                         report = (
-                            f"🕵️ <b>SECRETARY REPORT</b>\n"
-                            f"<b>From:</b> {sender}\n"
-                            f"<b>Subject:</b> {subject}\n\n"
-                            f"🧠 <b>AI Suggested Reply:</b>\n"
-                            f"<pre>{ai_draft}</pre>\n\n"
-                            f"<i>Copy the text above and send it!</i>"
+                            f"🕵️ SECRETARY REPORT\n"
+                            f"From: {sender}\n"
+                            f"Subject: {subject}\n\n"
+                            f"🧠 AI Suggested Reply:\n"
+                            f"{ai_draft}\n\n"
+                            f"-- End Report --"
                         )
                         send_telegram(report)
             except Exception as e:
-                print(f"Skipping an email due to error: {e}")
+                print(f"Skipping email due to error: {e}")
                 continue
 
         mail.close()
