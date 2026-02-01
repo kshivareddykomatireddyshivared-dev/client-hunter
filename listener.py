@@ -25,12 +25,11 @@ SENSITIVE_WORDS = ["otp", "verification code", "password reset", "bank", "debit"
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    # REMOVED 'parse_mode': 'HTML' to prevent crashing on symbols
+    # Sending plain text to ensure delivery even if AI uses weird symbols
     payload = {"chat_id": CHAT_ID, "text": message}
     
     try:
         response = requests.post(url, data=payload)
-        # PRINT THE SERVER RESPONSE (So we can see if Telegram says "Error")
         print(f"📨 Telegram Sent. Server Reply: {response.text}")
     except Exception as e:
         print(f"❌ Telegram Fail: {e}")
@@ -53,7 +52,8 @@ def ask_brain(email_body, sender_name):
     
     try:
         completion = client.chat.completions.create(
-            model="deepseek-r1-distill-llama-70b",
+            # --- UPDATED MODEL HERE ---
+            model="llama-3.3-70b-versatile",  
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Client Email: {email_body}"}
