@@ -10,11 +10,6 @@ GMAIL_PASS = os.environ["GMAIL_PASSWORD"]
 BOT_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-# --- 🧠 SMART FILTERS ---
-# The bot will ONLY alert you if the subject contains these words
-# "Re:" is the most important one for replies.
-KEYWORDS = ["Re:", "Project", "Script", "Proposal", "Collab", "Inquiry", "Payment"]
-
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -31,7 +26,8 @@ def check_mail():
         mail.login(GMAIL_USER, GMAIL_PASS)
         mail.select("inbox")
 
-        # Search for UNREAD emails only
+        # Search for ALL UNREAD emails
+        # We don't filter by subject. If it's unread, we grab it.
         status, messages = mail.search(None, 'UNREAD')
         
         if not messages or messages[0] == b'':
@@ -39,7 +35,7 @@ def check_mail():
             return
 
         email_ids = messages[0].split()
-        print(f"Found {len(email_ids)} unread emails. Filtering for clients...")
+        print(f"Found {len(email_ids)} unread emails.")
 
         for e_id in email_ids:
             try:
@@ -60,21 +56,15 @@ def check_mail():
                         
                         sender = msg.get("From")
                         
-                        # --- 🧠 FILTER LOGIC ---
-                        # Check if any keyword matches the subject
-                        is_important = any(word.lower() in subject.lower() for word in KEYWORDS)
-                        
-                        if is_important:
-                            print(f"✅ MATCH FOUND: {subject}")
-                            alert_text = (
-                                f"🚨 <b>CLIENT REPLY DETECTED!</b>\n\n"
-                                f"👤 <b>From:</b> {sender}\n"
-                                f"📝 <b>Subject:</b> {subject}\n"
-                                f"👉 <i>Check your Gmail now!</i>"
-                            )
-                            send_telegram(alert_text)
-                        else:
-                            print(f"🗑️ Ignored (Spam/Not Important): {subject}")
+                        # Send EVERYTHING to Telegram
+                        # We will add DeepSeek here later to analyze the body content
+                        print(f"✅ Alerting for: {subject}")
+                        alert_text = (
+                            f"🔔 <b>NEW EMAIL!</b>\n\n"
+                            f"👤 <b>From:</b> {sender}\n"
+                            f"📝 <b>Subject:</b> {subject}\n"
+                        )
+                        send_telegram(alert_text)
 
             except Exception as e:
                 print(f"Error reading email {e_id}: {e}")
