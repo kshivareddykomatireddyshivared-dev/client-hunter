@@ -2,6 +2,7 @@ import os
 import imaplib
 import email
 import requests
+import time
 from email.header import decode_header
 from groq import Groq
 
@@ -9,6 +10,15 @@ from groq import Groq
 PORTFOLIO_LINK = "https://drive.google.com/drive/folders/1SIbyVhHF9RuasqP0zcYMjX6DeFypSPvg"
 WHATSAPP_LINK = "https://wa.me/919391577137?text=Hello"
 MY_NAME = "Shiva"
+
+# --- THE BOUNCER (Junk Filter) ---
+# If the Sender or Subject contains these words, we IGNORE them.
+IGNORE_LIST = [
+    "noreply", "no-reply", "alert", "digest", "newsletter", "update",
+    "verify", "code", "otp", "statement", "bill", "invoice", 
+    "pokemon", "linkedin", "quora", "facebook", "instagram", "promotions", 
+    "marketing", "team", "support", "notifications"
+]
 
 # Load Secrets
 GMAIL_USER = os.environ["GMAIL_USER"]
@@ -20,43 +30,40 @@ GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 # Initialize Brain
 client = Groq(api_key=GROQ_API_KEY)
 
-# --- PRIVACY SHIELD ---
-SENSITIVE_WORDS = ["otp", "verification code", "password reset", "bank", "debit", "credit card", "login alert", "security code"]
-
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    # Sending plain text to ensure delivery even if AI uses weird symbols
     payload = {"chat_id": CHAT_ID, "text": message}
-    
     try:
-        response = requests.post(url, data=payload)
-        print(f"📨 Telegram Sent. Server Reply: {response.text}")
+        requests.post(url, data=payload)
     except Exception as e:
         print(f"❌ Telegram Fail: {e}")
 
 def ask_brain(email_body, sender_name):
+    # --- CRASH FIX: THE HAIRCUT ---
+    # We truncate the email to 1000 characters max. 
+    # This prevents the "Request too large" error completely.
+    short_body = email_body[:1000] 
+    
     system_prompt = f"""
     You are the AI Secretary for {MY_NAME}, a professional Scriptwriter.
     Your goal is to convert leads into WhatsApp conversations.
     
     RULES:
-    1. If they ask for Price/Cost -> Say: "Let's discuss the package on WhatsApp for a custom deal."
-    2. If they ask for Samples -> Share this Portfolio: {PORTFOLIO_LINK}
-    3. If they ask for Phone Number -> Do NOT give it. Ask {MY_NAME} (Boss) for permission.
-    4. NEVER promise delivery dates or specific results.
-    5. Keep the tone professional, short, and persuasive.
+    1. If the email is a Job Offer or Client Lead -> Write a draft reply.
+    2. If it is Spam/Newsletter/Automated -> Reply exactly: "IGNORE"
+    3. If asking for Price -> Say: "Let's discuss on WhatsApp."
+    4. If asking for Samples -> Share Portfolio: {PORTFOLIO_LINK}
+    5. Keep it short (under 50 words).
     
-    Output Format:
-    Write a short draft reply that {MY_NAME} can copy-paste.
+    Output: Only the draft reply.
     """
     
     try:
         completion = client.chat.completions.create(
-            # --- UPDATED MODEL HERE ---
-            model="llama-3.3-70b-versatile",  
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Client Email: {email_body}"}
+                {"role": "user", "content": f"Sender: {sender_name}\nEmail: {short_body}..."}
             ],
             temperature=0.6,
             max_tokens=200
@@ -73,13 +80,12 @@ def check_mail():
         mail.select("inbox")
 
         status, messages = mail.search(None, 'UNSEEN')
-        
         if not messages or messages[0] == b'':
             print("No new mail.")
             return
 
         email_ids = messages[0].split()
-        # Check last 5 emails to be safe
+        # Check last 5 emails
         recent_email_ids = email_ids[-5:] 
         
         for e_id in recent_email_ids:
@@ -92,7 +98,20 @@ def check_mail():
                         subject, encoding = decode_header(msg["Subject"])[0]
                         if isinstance(subject, bytes):
                             subject = subject.decode(encoding if encoding else "utf-8")
+                        sender = msg.get("From") or ""
+
+                        # --- 🚫 THE BOUNCER (Junk Check) ---
+                        is_junk = False
+                        for word in IGNORE_LIST:
+                            if word.lower() in sender.lower() or word.lower() in subject.lower():
+                                print(f"🗑️ Junk detected ({word}): {subject}")
+                                is_junk = True
+                                break
                         
+                        if is_junk:
+                            continue # Skip to next email
+
+                        # Get Body
                         body = ""
                         if msg.is_multipart():
                             for part in msg.walk():
@@ -106,26 +125,27 @@ def check_mail():
                             if payload:
                                 body = payload.decode("utf-8", errors="ignore")
 
-                        if any(s.lower() in body.lower() for s in SENSITIVE_WORDS):
-                            print(f"🔒 Sensitive email detected ({subject}). Ignoring.")
-                            continue 
+                        print(f"✅ Analyzing potential client: {sender}")
+                        
+                        # Get AI Draft
+                        ai_reply = ask_brain(body, sender)
+                        
+                        # Double Check: If AI says "IGNORE", we don't message you
+                        if "IGNORE" in ai_reply:
+                            print("🤖 AI said this is spam. Skipping.")
+                            continue
 
-                        sender = msg.get("From")
-                        print(f"Analyzing email from: {sender}")
-                        
-                        ai_draft = ask_brain(body, sender)
-                        
                         report = (
                             f"🕵️ SECRETARY REPORT\n"
                             f"From: {sender}\n"
                             f"Subject: {subject}\n\n"
-                            f"🧠 AI Suggested Reply:\n"
-                            f"{ai_draft}\n\n"
-                            f"-- End Report --"
+                            f"🧠 Suggested Reply:\n{ai_reply}\n"
                         )
                         send_telegram(report)
+                        time.sleep(2) # Avoid rate limits
+                        
             except Exception as e:
-                print(f"Skipping email due to error: {e}")
+                print(f"Skipping email error: {e}")
                 continue
 
         mail.close()
