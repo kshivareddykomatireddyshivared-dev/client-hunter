@@ -10,7 +10,7 @@ from groq import Groq
 PORTFOLIO_LINK = "https://drive.google.com/drive/folders/1SIbyVhHF9RuasqP0zcYMjX6DeFypSPvg"
 MY_NAME = "Shiva"
 
-# --- JUNK FILTER (Save CPU & Money) ---
+# --- JUNK FILTER ---
 IGNORE_LIST = [
     "noreply", "no-reply", "alert", "digest", "newsletter", "update",
     "verify", "code", "otp", "statement", "bill", "invoice", 
@@ -35,18 +35,17 @@ def send_telegram(message):
     except Exception as e:
         print(f"❌ Telegram Fail: {e}")
 
-def ask_brain(email_body, sender_name):
-    short_body = email_body[:1000]
+def ask_brain(email_body, sender_name, subject_line):
+    short_body = email_body[:1500]
     
     system_prompt = f"""
     You are the AI Secretary for {MY_NAME}, a professional Scriptwriter.
     
     RULES:
-    1. If it's a Client/Job -> Write a draft reply.
-    2. If it's Spam/Newsletter -> Reply exactly: "IGNORE"
+    1. CRITICAL: If this is a REPLY from a human (Subject has 'Re:'), draft a polite response.
+    2. If it's CLEARLY Spam/Automated -> Reply exactly: "IGNORE"
     3. If asking Price -> Say: "Let's discuss on WhatsApp."
     4. If asking Samples -> Share Portfolio: {PORTFOLIO_LINK}
-    5. Keep it short.
     
     Output: Only the draft reply.
     """
@@ -56,7 +55,7 @@ def ask_brain(email_body, sender_name):
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Sender: {sender_name}\nEmail: {short_body}..."}
+                {"role": "user", "content": f"Sender: {sender_name}\nSubject: {subject_line}\nEmail: {short_body}..."}
             ],
             temperature=0.6,
             max_tokens=200
@@ -72,7 +71,6 @@ def check_mail():
         mail.login(GMAIL_USER, GMAIL_PASS)
         mail.select("inbox")
 
-        # Search UNSEEN (Unread) emails only
         status, messages = mail.search(None, 'UNSEEN')
         
         if not messages or messages[0] == b'':
@@ -81,10 +79,8 @@ def check_mail():
 
         email_ids = messages[0].split()
         
-        # --- ⚡ THE SPEED FIX ⚡ ---
-        # Only take the last 10 emails (The most recent ones).
-        # This prevents it from reading 1000s of old unread emails.
-        recent_email_ids = email_ids[-10:] 
+        # Increased limit to 20 to catch replies hidden behind spam
+        recent_email_ids = email_ids[-20:] 
         
         print(f"Checking {len(recent_email_ids)} recent unread emails...")
 
@@ -100,13 +96,17 @@ def check_mail():
                             subject = subject.decode(encoding if encoding else "utf-8")
                         sender = msg.get("From") or ""
 
-                        # --- 1. JUNK FILTER ---
+                        # --- 🛡️ 1. VIP RULE: REPLIES BYPASS FILTERS ---
+                        is_reply = "re:" in subject.lower()
                         is_junk = False
-                        for word in IGNORE_LIST:
-                            if word.lower() in sender.lower() or word.lower() in subject.lower():
-                                print(f"🗑️ Junk detected ({word}): {subject}")
-                                is_junk = True
-                                break
+                        
+                        # Only run junk check if it is NOT a reply
+                        if not is_reply:
+                            for word in IGNORE_LIST:
+                                if word.lower() in sender.lower() or word.lower() in subject.lower():
+                                    print(f"🗑️ Junk detected ({word}): {subject}")
+                                    is_junk = True
+                                    break
                         
                         if is_junk: continue
 
@@ -122,10 +122,11 @@ def check_mail():
                             payload = msg.get_payload(decode=True)
                             if payload: body = payload.decode("utf-8", errors="ignore")
 
-                        print(f"✅ Analyzing: {sender}")
+                        print(f"✅ Analyzing: {sender} | Subject: {subject}")
                         
                         # --- 3. ASK BRAIN ---
-                        ai_draft = ask_brain(body, sender)
+                        # We now pass the Subject to the brain so it knows if it's a "Re:"
+                        ai_draft = ask_brain(body, sender, subject)
                         
                         if "IGNORE" in ai_draft:
                             print("🤖 AI said IGNORE.")
@@ -152,4 +153,4 @@ def check_mail():
 
 if __name__ == "__main__":
     check_mail()
-    
+                        
