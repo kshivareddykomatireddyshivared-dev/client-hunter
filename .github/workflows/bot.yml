@@ -16,7 +16,7 @@ jobs:
           python-version: '3.9'
       
       - name: Install Libraries
-        run: pip install requests
+        run: pip install requests groq
 
       - name: Run Listener Script
         env:
