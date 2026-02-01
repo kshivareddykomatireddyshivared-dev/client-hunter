@@ -69,8 +69,8 @@ def check_mail():
         mail.select("inbox")
 
         # --- THE FIX IS HERE ---
-        # Notice: No brackets around 'UNREAD'
-        status, messages = mail.search(None, 'UNREAD')
+        # We changed 'UNREAD' to 'UNSEEN' (This is the correct computer term)
+        status, messages = mail.search(None, 'UNSEEN')
         
         if not messages or messages[0] == b'':
             print("No new mail.")
@@ -129,3 +129,4 @@ def check_mail():
 
 if __name__ == "__main__":
     check_mail()
+    
