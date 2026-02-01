@@ -68,8 +68,7 @@ def check_mail():
         mail.login(GMAIL_USER, GMAIL_PASS)
         mail.select("inbox")
 
-        # --- THE FIX IS HERE ---
-        # We changed 'UNREAD' to 'UNSEEN' (This is the correct computer term)
+        # Search for UNSEEN (Unread) emails
         status, messages = mail.search(None, 'UNSEEN')
         
         if not messages or messages[0] == b'':
@@ -78,54 +77,67 @@ def check_mail():
 
         email_ids = messages[0].split()
         
-        for e_id in email_ids:
-            # Fetch Email
-            _, msg_data = mail.fetch(e_id, "(RFC822)")
-            for response_part in msg_data:
-                if isinstance(response_part, tuple):
-                    msg = email.message_from_bytes(response_part[1])
-                    
-                    # Get Subject
-                    subject, encoding = decode_header(msg["Subject"])[0]
-                    if isinstance(subject, bytes):
-                        subject = subject.decode(encoding if encoding else "utf-8")
-                    
-                    # Get Body
-                    body = ""
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            if part.get_content_type() == "text/plain":
-                                body = part.get_payload(decode=True).decode()
-                                break
-                    else:
-                        body = msg.get_payload(decode=True).decode()
+        # Limit to checking the last 10 emails to prevent timeouts if you have thousands
+        # You can remove [-10:] if you want to check ALL of them.
+        recent_email_ids = email_ids[-10:] 
+        
+        for e_id in recent_email_ids:
+            try:
+                # Fetch Email
+                _, msg_data = mail.fetch(e_id, "(RFC822)")
+                for response_part in msg_data:
+                    if isinstance(response_part, tuple):
+                        msg = email.message_from_bytes(response_part[1])
+                        
+                        # Get Subject
+                        subject, encoding = decode_header(msg["Subject"])[0]
+                        if isinstance(subject, bytes):
+                            subject = subject.decode(encoding if encoding else "utf-8")
+                        
+                        # --- THE FIX IS HERE ---
+                        # We added errors="ignore" so it skips weird characters instead of crashing
+                        body = ""
+                        if msg.is_multipart():
+                            for part in msg.walk():
+                                if part.get_content_type() == "text/plain":
+                                    payload = part.get_payload(decode=True)
+                                    if payload:
+                                        body = payload.decode("utf-8", errors="ignore")
+                                    break
+                        else:
+                            payload = msg.get_payload(decode=True)
+                            if payload:
+                                body = payload.decode("utf-8", errors="ignore")
 
-                    # --- 🛡️ PRIVACY CHECK ---
-                    if any(s.lower() in body.lower() for s in SENSITIVE_WORDS):
-                        print(f"🔒 Sensitive email detected ({subject}). Ignoring.")
-                        continue 
+                        # --- 🛡️ PRIVACY CHECK ---
+                        if any(s.lower() in body.lower() for s in SENSITIVE_WORDS):
+                            print(f"🔒 Sensitive email detected ({subject}). Ignoring.")
+                            continue 
 
-                    # --- 🧠 AI ANALYSIS ---
-                    sender = msg.get("From")
-                    print(f"Analyzing email from: {sender}")
-                    
-                    ai_draft = ask_brain(body, sender)
-                    
-                    report = (
-                        f"🕵️ <b>SECRETARY REPORT</b>\n"
-                        f"<b>From:</b> {sender}\n"
-                        f"<b>Subject:</b> {subject}\n\n"
-                        f"🧠 <b>AI Suggested Reply:</b>\n"
-                        f"<pre>{ai_draft}</pre>\n\n"
-                        f"<i>Copy the text above and send it!</i>"
-                    )
-                    send_telegram(report)
+                        # --- 🧠 AI ANALYSIS ---
+                        sender = msg.get("From")
+                        print(f"Analyzing email from: {sender}")
+                        
+                        ai_draft = ask_brain(body, sender)
+                        
+                        report = (
+                            f"🕵️ <b>SECRETARY REPORT</b>\n"
+                            f"<b>From:</b> {sender}\n"
+                            f"<b>Subject:</b> {subject}\n\n"
+                            f"🧠 <b>AI Suggested Reply:</b>\n"
+                            f"<pre>{ai_draft}</pre>\n\n"
+                            f"<i>Copy the text above and send it!</i>"
+                        )
+                        send_telegram(report)
+            except Exception as e:
+                print(f"Skipping an email due to error: {e}")
+                continue
 
         mail.close()
         mail.logout()
         
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Critical Error: {e}")
 
 if __name__ == "__main__":
     check_mail()
