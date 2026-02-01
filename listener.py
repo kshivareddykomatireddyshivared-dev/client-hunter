@@ -29,7 +29,6 @@ client = Groq(api_key=GROQ_API_KEY)
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    # We use simple text payload to prevent HTML errors
     payload = {"chat_id": CHAT_ID, "text": message}
     try:
         requests.post(url, data=payload)
@@ -37,7 +36,6 @@ def send_telegram(message):
         print(f"❌ Telegram Fail: {e}")
 
 def ask_brain(email_body, sender_name):
-    # Cut email to 1000 characters to prevent crashing
     short_body = email_body[:1000]
     
     system_prompt = f"""
@@ -83,7 +81,14 @@ def check_mail():
 
         email_ids = messages[0].split()
         
-        for e_id in email_ids:
+        # --- ⚡ THE SPEED FIX ⚡ ---
+        # Only take the last 10 emails (The most recent ones).
+        # This prevents it from reading 1000s of old unread emails.
+        recent_email_ids = email_ids[-10:] 
+        
+        print(f"Checking {len(recent_email_ids)} recent unread emails...")
+
+        for e_id in recent_email_ids:
             try:
                 _, msg_data = mail.fetch(e_id, "(RFC822)")
                 for response_part in msg_data:
@@ -147,4 +152,4 @@ def check_mail():
 
 if __name__ == "__main__":
     check_mail()
-                            
+    
