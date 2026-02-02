@@ -1,15 +1,18 @@
 import os
 import imaplib
+import smtplib
 import email
 import requests
 import html
 import time
 from email.header import decode_header
+from email.mime.text import MIMEText
 from groq import Groq
 
 # --- CONFIGURATION ---
-PORTFOLIO_LINK = "https://drive.google.com/drive/folders/1SIbyVhHF9RuasqP0zcYMjX6DeFypSPvg"
 MY_NAME = "Shiva"
+WHATSAPP_LINK = "https://wa.me/919391577137?text=Hi%20Shiva,%20I%20am%20interested%20in%20scriptwriting"
+PORTFOLIO_LINK = "https://drive.google.com/drive/folders/1SIbyVhHF9RuasqP0zcYMjX6DeFypSPvg"
 
 # --- JUNK FILTER ---
 IGNORE_LIST = [
@@ -19,13 +22,13 @@ IGNORE_LIST = [
     "marketing", "team", "support", "notifications", "security", "fedex", "tracking"
 ]
 
-# --- 🧠 HYBRID ENGINE ---
+# --- 🧠 HYBRID ENGINE (Updated with 120B Model) ---
 MODELS = [
-     "openai/gpt-oss-120b",            # 1. HUGE LIMIT (250k tokens/day)
-    "llama-3.3-70b-versatile",        # 2. High Quality (100k tokens)
-    "moonshotai/kimi-k2-instruct-0905", # 3. User Requested
-    "qwen-2.5-32b",                   # 4. Coding Expert (Standard Groq ID)
-    "llama-3.1-8b-instant"            # 5. Speed Backup
+    "openai/gpt-oss-120b",            # 1. HUGE LIMIT (250k tokens)
+    "llama-3.3-70b-versatile",        # 2. High Quality
+    "moonshotai/kimi-k2-instruct-0905", 
+    "qwen-2.5-32b",                   
+    "llama-3.1-8b-instant"            
 ]
 
 # Load Secrets
@@ -45,20 +48,44 @@ def send_telegram(message):
     except Exception as e:
         print(f"❌ Telegram Fail: {e}")
 
-def ask_brain_smart(email_body, sender_name, subject_line):
-    short_body = email_body[:1500]
+def send_gmail_reply(to_email, subject, body):
+    # Ensure subject has "Re:"
+    if not subject.lower().startswith("re:"):
+        subject = "Re: " + subject
+        
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = GMAIL_USER
+    msg['To'] = to_email
+
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(GMAIL_USER, GMAIL_PASS)
+            server.sendmail(GMAIL_USER, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        return str(e)
+
+def ask_brain_autopilot(email_body, sender_name, subject_line):
+    short_body = email_body[:2000]
     
     system_prompt = f"""
-    You are the AI Secretary for {MY_NAME}, a professional Scriptwriter.
-    RULES:
-    1. If this is a REPLY (Subject has 'Re:'), draft a polite response.
-    2. If it's Spam/Automated -> Reply exactly: "IGNORE"
-    3. If asking Price -> Say: "Let's discuss on WhatsApp."
-    4. If asking Samples -> Share Portfolio: {PORTFOLIO_LINK}
-    Output: Only the draft reply.
+    You are Shiva's AI Personal Assistant.
+    YOUR GOAL: Get the client to message Shiva on WhatsApp: {WHATSAPP_LINK}
+    
+    STRATEGY:
+    1. If they ask for PRICE/COST -> Reply: "Pricing depends on the project scope. Let's discuss it quickly on WhatsApp here: {WHATSAPP_LINK}"
+    2. If they ask for CONTACT -> Reply: "You can reach me directly on WhatsApp: {WHATSAPP_LINK}"
+    3. If they say "INTERESTED" -> Reply: "Great! Let's finalize the details. Please message me on WhatsApp: {WHATSAPP_LINK}"
+    4. If they ask for SAMPLES -> Reply: "Here is my portfolio: {PORTFOLIO_LINK} . Let me know on WhatsApp what you think!"
+    
+    CRITICAL RULES:
+    - Keep it SHORT (under 50 words).
+    - Be professional but direct.
+    - If the email is confusing, angry, or requires complex human thought, output EXACTLY: "HUMAN_HELP"
+    - Do NOT output "Subject:" or any other text, just the email body.
     """
     
-    # --- FAILOVER LOOP ---
     for model_name in MODELS:
         try:
             print(f"🧠 Thinking with {model_name}...")
@@ -74,14 +101,10 @@ def ask_brain_smart(email_body, sender_name, subject_line):
             return completion.choices[0].message.content
             
         except Exception as e:
-            error_msg = str(e)
-            if "429" in error_msg or "rate limit" in error_msg.lower():
-                print(f"⚠️ {model_name} limit reached! Switching...")
-                continue 
-            else:
-                return f"Brain Error: {error_msg}"
+            print(f"⚠️ {model_name} failed. Switching...")
+            continue 
     
-    return "❌ All AI Models are busy."
+    return "HUMAN_HELP"
 
 def check_mail():
     print("Connecting to Gmail...")
@@ -96,7 +119,7 @@ def check_mail():
             return
 
         email_ids = messages[0].split()
-        recent_email_ids = email_ids[-20:] # Check last 20
+        recent_email_ids = email_ids[-10:] # Check last 10
         
         print(f"Checking {len(recent_email_ids)} emails...")
 
@@ -106,7 +129,6 @@ def check_mail():
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
                         msg = email.message_from_bytes(response_part[1])
-                        
                         subject, encoding = decode_header(msg["Subject"])[0]
                         if isinstance(subject, bytes):
                             subject = subject.decode(encoding if encoding else "utf-8")
@@ -122,8 +144,10 @@ def check_mail():
                                     is_junk = True
                                     break
                         if is_junk: continue
+                        
+                        # Extract Email Address for Replying
+                        reply_to = email.utils.parseaddr(sender)[1]
 
-                        # Get Body
                         body = ""
                         if msg.is_multipart():
                             for part in msg.walk():
@@ -136,20 +160,36 @@ def check_mail():
                             if payload: body = payload.decode("utf-8", errors="ignore")
 
                         print(f"✅ Analyzing: {sender}")
-                        ai_draft = ask_brain_smart(body, sender, subject)
+                        ai_response = ask_brain_autopilot(body, sender, subject)
                         
-                        if "IGNORE" in ai_draft: continue
-
-                        report = (
-                            f"🔔 NEW CLIENT REPLY!\n"
-                            f"From: {sender}\n"
-                            f"Subject: {subject}\n\n"
-                            f"📝 Draft Reply:\n{ai_draft}"
-                        )
-                        send_telegram(report)
+                        # --- AUTO-PILOT DECISION ---
+                        if "HUMAN_HELP" in ai_response or "IGNORE" in ai_response:
+                            # Too complex? Alert Shiva.
+                            report = (
+                                f"⚠️ <b>I NEED YOUR HELP</b>\n"
+                                f"From: {sender}\n"
+                                f"Subject: {subject}\n\n"
+                                f"I didn't auto-reply because the client seems confused or angry. Please check."
+                            )
+                            send_telegram(report)
+                        else:
+                            # CONFIDENT? AUTO-SEND! 🚀
+                            print(f"🚀 Auto-Replying to {reply_to}...")
+                            success = send_gmail_reply(reply_to, subject, ai_response)
+                            
+                            if success is True:
+                                report = (
+                                    f"✅ <b>AUTO-REPLY SENT!</b>\n"
+                                    f"To: {sender}\n"
+                                    f"Subject: {subject}\n\n"
+                                    f"<b>I said:</b>\n{ai_response}"
+                                )
+                                send_telegram(report)
+                            else:
+                                send_telegram(f"❌ Failed to Auto-Reply: {success}")
                         
             except Exception as e:
-                print(f"Skipping email error: {e}")
+                print(f"Error: {e}")
                 continue
 
         mail.close()
