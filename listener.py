@@ -14,7 +14,7 @@ MY_NAME = "Shiva"
 WHATSAPP_LINK = "https://wa.me/919391577137?text=Hi%20Shiva,%20I%20am%20interested%20in%20scriptwriting"
 PORTFOLIO_LINK = "https://drive.google.com/drive/folders/1SIbyVhHF9RuasqP0zcYMjX6DeFypSPvg"
 
-# --- 🛡️ EXPANDED JUNK FILTER ---
+# --- 🛡️ JUNK FILTER ---
 IGNORE_LIST = [
     "noreply", "no-reply", "alert", "digest", "newsletter", "update",
     "verify", "code", "otp", "statement", "bill", "invoice", 
@@ -73,18 +73,23 @@ def ask_brain_autopilot(email_body, sender_name, subject_line):
     system_prompt = f"""
     You are Shiva's AI Assistant.
     
-    CRITICAL RULE:
-    - ONLY write a reply if this is a REAL HUMAN CLIENT interested in scriptwriting.
-    - If this is a Newsletter, Receipt, Spam, Automated Notification, or from Amazon/Adobe/etc -> Output EXACTLY: "IGNORE"
+    STEP 1: SENTIMENT CHECK
+    - Does the client say "NO", "NOT INTERESTED", "STOP", "REMOVE ME", "UNSUBSCRIBE"?
+    - Is the tone ANGRY or ANNOYED?
+    - IF YES -> Output EXACTLY: "NEGATIVE_ABORT"
     
-    GOAL:
-    - If it's a real client, get them to WhatsApp: {WHATSAPP_LINK}
-    - Keep it under 50 words. Professional tone.
+    STEP 2: IF POSITIVE/NEUTRAL
+    - If they are asking questions, saying "ok", asking for price, or interested:
+    - Write a short reply to get them to WhatsApp: {WHATSAPP_LINK}
+    - Keep it professional and under 50 words.
+    
+    STEP 3: IF SPAM/IRRELEVANT
+    - If it's Amazon, Automated, or Nonsense -> Output EXACTLY: "IGNORE"
     
     SCENARIOS:
-    1. Asking Price/Samples -> "Let's discuss on WhatsApp: {WHATSAPP_LINK}"
-    2. "Interested" -> "Great! Message me here: {WHATSAPP_LINK}"
-    3. Confusing/Angry -> "HUMAN_HELP"
+    - "Price?" -> "Let's discuss budget on WhatsApp: {WHATSAPP_LINK}"
+    - "Stop emailing" -> "NEGATIVE_ABORT"
+    - "Who is this?" -> "I am Shiva, a scriptwriter. Reaching out about your channel. Chat here: {WHATSAPP_LINK}"
     """
     
     for model_name in MODELS:
@@ -119,7 +124,7 @@ def check_mail():
             return
 
         email_ids = messages[0].split()
-        recent_email_ids = email_ids[-10:] # Check last 10
+        recent_email_ids = email_ids[-10:] 
         
         print(f"Checking {len(recent_email_ids)} emails...")
 
@@ -134,15 +139,11 @@ def check_mail():
                             subject = subject.decode(encoding if encoding else "utf-8")
                         sender = msg.get("From") or ""
 
-                        # --- 🛡️ STRICT FILTERING ---
-                        
-                        # 1. MUST BE A REPLY (Contain "Re:" or "RE:")
-                        # If it's not a reply, we assume it's a newsletter/spam and ignore it.
+                        # --- STRICT FILTERING ---
                         if "re:" not in subject.lower():
                             print(f"🚫 Ignoring (Not a reply): {subject}")
                             continue
 
-                        # 2. CHECK BLACKLIST
                         is_junk = False
                         for word in IGNORE_LIST:
                             if word.lower() in sender.lower() or word.lower() in subject.lower():
@@ -151,10 +152,8 @@ def check_mail():
                                 break
                         if is_junk: continue
                         
-                        # Extract Email Address
                         reply_to = email.utils.parseaddr(sender)[1]
 
-                        # Get Body
                         body = ""
                         if msg.is_multipart():
                             for part in msg.walk():
@@ -169,20 +168,33 @@ def check_mail():
                         print(f"✅ Analyzing Client: {sender}")
                         ai_response = ask_brain_autopilot(body, sender, subject)
                         
+                        # --- THE NEW DECISION MATRIX ---
+                        
                         if "IGNORE" in ai_response:
                             print("🤖 AI identified spam. Ignoring.")
                             continue
+                            
+                        elif "NEGATIVE_ABORT" in ai_response:
+                            # 🛑 STOP! Don't reply. Just alert.
+                            report = (
+                                f"🛑 <b>CLIENT SAID NO</b>\n"
+                                f"From: {sender}\n"
+                                f"Subject: {subject}\n\n"
+                                f"Client is not interested. I did NOT reply."
+                            )
+                            send_telegram(report)
                         
                         elif "HUMAN_HELP" in ai_response:
                             report = (
                                 f"⚠️ <b>I NEED YOUR HELP</b>\n"
                                 f"From: {sender}\n"
                                 f"Subject: {subject}\n\n"
-                                f"Client seems confused. Please reply manually."
+                                f"AI is confused. Please check manually."
                             )
                             send_telegram(report)
+                            
                         else:
-                            # REAL CLIENT? SEND IT! 🚀
+                            # ✅ POSITIVE/NEUTRAL -> SEND IT!
                             print(f"🚀 Replying to {reply_to}...")
                             success = send_gmail_reply(reply_to, subject, ai_response)
                             
