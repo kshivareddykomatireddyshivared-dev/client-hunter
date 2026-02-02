@@ -14,18 +14,20 @@ MY_NAME = "Shiva"
 WHATSAPP_LINK = "https://wa.me/919391577137?text=Hi%20Shiva,%20I%20am%20interested%20in%20scriptwriting"
 PORTFOLIO_LINK = "https://drive.google.com/drive/folders/1SIbyVhHF9RuasqP0zcYMjX6DeFypSPvg"
 
-# --- JUNK FILTER ---
+# --- 🛡️ EXPANDED JUNK FILTER ---
 IGNORE_LIST = [
     "noreply", "no-reply", "alert", "digest", "newsletter", "update",
     "verify", "code", "otp", "statement", "bill", "invoice", 
     "pokemon", "linkedin", "quora", "facebook", "instagram", "promotions", 
-    "marketing", "team", "support", "notifications", "security", "fedex", "tracking"
+    "marketing", "team", "support", "notifications", "security", "fedex", "tracking",
+    "amazon", "adobe", "wordpress", "flipkart", "zomato", "swiggy", "bank", 
+    "report", "snapcalorie", "wemakescholars", "info", "contact", "hello"
 ]
 
-# --- 🧠 HYBRID ENGINE (Updated with 120B Model) ---
+# --- 🧠 HYBRID ENGINE ---
 MODELS = [
-    "openai/gpt-oss-120b",            # 1. HUGE LIMIT (250k tokens)
-    "llama-3.3-70b-versatile",        # 2. High Quality
+    "openai/gpt-oss-120b",
+    "llama-3.3-70b-versatile",
     "moonshotai/kimi-k2-instruct-0905", 
     "qwen-2.5-32b",                   
     "llama-3.1-8b-instant"            
@@ -49,7 +51,6 @@ def send_telegram(message):
         print(f"❌ Telegram Fail: {e}")
 
 def send_gmail_reply(to_email, subject, body):
-    # Ensure subject has "Re:"
     if not subject.lower().startswith("re:"):
         subject = "Re: " + subject
         
@@ -70,20 +71,20 @@ def ask_brain_autopilot(email_body, sender_name, subject_line):
     short_body = email_body[:2000]
     
     system_prompt = f"""
-    You are Shiva's AI Personal Assistant.
-    YOUR GOAL: Get the client to message Shiva on WhatsApp: {WHATSAPP_LINK}
+    You are Shiva's AI Assistant.
     
-    STRATEGY:
-    1. If they ask for PRICE/COST -> Reply: "Pricing depends on the project scope. Let's discuss it quickly on WhatsApp here: {WHATSAPP_LINK}"
-    2. If they ask for CONTACT -> Reply: "You can reach me directly on WhatsApp: {WHATSAPP_LINK}"
-    3. If they say "INTERESTED" -> Reply: "Great! Let's finalize the details. Please message me on WhatsApp: {WHATSAPP_LINK}"
-    4. If they ask for SAMPLES -> Reply: "Here is my portfolio: {PORTFOLIO_LINK} . Let me know on WhatsApp what you think!"
+    CRITICAL RULE:
+    - ONLY write a reply if this is a REAL HUMAN CLIENT interested in scriptwriting.
+    - If this is a Newsletter, Receipt, Spam, Automated Notification, or from Amazon/Adobe/etc -> Output EXACTLY: "IGNORE"
     
-    CRITICAL RULES:
-    - Keep it SHORT (under 50 words).
-    - Be professional but direct.
-    - If the email is confusing, angry, or requires complex human thought, output EXACTLY: "HUMAN_HELP"
-    - Do NOT output "Subject:" or any other text, just the email body.
+    GOAL:
+    - If it's a real client, get them to WhatsApp: {WHATSAPP_LINK}
+    - Keep it under 50 words. Professional tone.
+    
+    SCENARIOS:
+    1. Asking Price/Samples -> "Let's discuss on WhatsApp: {WHATSAPP_LINK}"
+    2. "Interested" -> "Great! Message me here: {WHATSAPP_LINK}"
+    3. Confusing/Angry -> "HUMAN_HELP"
     """
     
     for model_name in MODELS:
@@ -101,7 +102,6 @@ def ask_brain_autopilot(email_body, sender_name, subject_line):
             return completion.choices[0].message.content
             
         except Exception as e:
-            print(f"⚠️ {model_name} failed. Switching...")
             continue 
     
     return "HUMAN_HELP"
@@ -134,20 +134,27 @@ def check_mail():
                             subject = subject.decode(encoding if encoding else "utf-8")
                         sender = msg.get("From") or ""
 
-                        # --- VIP RULE ---
-                        is_reply = "re:" in subject.lower()
+                        # --- 🛡️ STRICT FILTERING ---
+                        
+                        # 1. MUST BE A REPLY (Contain "Re:" or "RE:")
+                        # If it's not a reply, we assume it's a newsletter/spam and ignore it.
+                        if "re:" not in subject.lower():
+                            print(f"🚫 Ignoring (Not a reply): {subject}")
+                            continue
+
+                        # 2. CHECK BLACKLIST
                         is_junk = False
-                        if not is_reply:
-                            for word in IGNORE_LIST:
-                                if word.lower() in sender.lower() or word.lower() in subject.lower():
-                                    print(f"🗑️ Junk: {subject}")
-                                    is_junk = True
-                                    break
+                        for word in IGNORE_LIST:
+                            if word.lower() in sender.lower() or word.lower() in subject.lower():
+                                print(f"🗑️ Junk detected: {sender}")
+                                is_junk = True
+                                break
                         if is_junk: continue
                         
-                        # Extract Email Address for Replying
+                        # Extract Email Address
                         reply_to = email.utils.parseaddr(sender)[1]
 
+                        # Get Body
                         body = ""
                         if msg.is_multipart():
                             for part in msg.walk():
@@ -159,22 +166,24 @@ def check_mail():
                             payload = msg.get_payload(decode=True)
                             if payload: body = payload.decode("utf-8", errors="ignore")
 
-                        print(f"✅ Analyzing: {sender}")
+                        print(f"✅ Analyzing Client: {sender}")
                         ai_response = ask_brain_autopilot(body, sender, subject)
                         
-                        # --- AUTO-PILOT DECISION ---
-                        if "HUMAN_HELP" in ai_response or "IGNORE" in ai_response:
-                            # Too complex? Alert Shiva.
+                        if "IGNORE" in ai_response:
+                            print("🤖 AI identified spam. Ignoring.")
+                            continue
+                        
+                        elif "HUMAN_HELP" in ai_response:
                             report = (
                                 f"⚠️ <b>I NEED YOUR HELP</b>\n"
                                 f"From: {sender}\n"
                                 f"Subject: {subject}\n\n"
-                                f"I didn't auto-reply because the client seems confused or angry. Please check."
+                                f"Client seems confused. Please reply manually."
                             )
                             send_telegram(report)
                         else:
-                            # CONFIDENT? AUTO-SEND! 🚀
-                            print(f"🚀 Auto-Replying to {reply_to}...")
+                            # REAL CLIENT? SEND IT! 🚀
+                            print(f"🚀 Replying to {reply_to}...")
                             success = send_gmail_reply(reply_to, subject, ai_response)
                             
                             if success is True:
@@ -186,7 +195,7 @@ def check_mail():
                                 )
                                 send_telegram(report)
                             else:
-                                send_telegram(f"❌ Failed to Auto-Reply: {success}")
+                                send_telegram(f"❌ Failed to Reply: {success}")
                         
             except Exception as e:
                 print(f"Error: {e}")
