@@ -3,6 +3,7 @@ import imaplib
 import email
 import requests
 import html
+import time
 from email.header import decode_header
 from groq import Groq
 
@@ -16,6 +17,14 @@ IGNORE_LIST = [
     "verify", "code", "otp", "statement", "bill", "invoice", 
     "pokemon", "linkedin", "quora", "facebook", "instagram", "promotions", 
     "marketing", "team", "support", "notifications", "security", "fedex", "tracking"
+]
+
+# --- 🧠 HYBRID ENGINE ---
+MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it"
 ]
 
 # Load Secrets
@@ -35,34 +44,43 @@ def send_telegram(message):
     except Exception as e:
         print(f"❌ Telegram Fail: {e}")
 
-def ask_brain(email_body, sender_name, subject_line):
+def ask_brain_smart(email_body, sender_name, subject_line):
     short_body = email_body[:1500]
     
     system_prompt = f"""
     You are the AI Secretary for {MY_NAME}, a professional Scriptwriter.
-    
     RULES:
-    1. CRITICAL: If this is a REPLY from a human (Subject has 'Re:'), draft a polite response.
-    2. If it's CLEARLY Spam/Automated -> Reply exactly: "IGNORE"
+    1. If this is a REPLY (Subject has 'Re:'), draft a polite response.
+    2. If it's Spam/Automated -> Reply exactly: "IGNORE"
     3. If asking Price -> Say: "Let's discuss on WhatsApp."
     4. If asking Samples -> Share Portfolio: {PORTFOLIO_LINK}
-    
     Output: Only the draft reply.
     """
     
-    try:
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Sender: {sender_name}\nSubject: {subject_line}\nEmail: {short_body}..."}
-            ],
-            temperature=0.6,
-            max_tokens=200
-        )
-        return completion.choices[0].message.content
-    except Exception as e:
-        return f"Brain Error: {str(e)}"
+    # --- FAILOVER LOOP ---
+    for model_name in MODELS:
+        try:
+            print(f"🧠 Thinking with {model_name}...")
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Sender: {sender_name}\nSubject: {subject_line}\nEmail: {short_body}..."}
+                ],
+                temperature=0.6,
+                max_tokens=200
+            )
+            return completion.choices[0].message.content
+            
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg or "rate limit" in error_msg.lower():
+                print(f"⚠️ {model_name} limit reached! Switching...")
+                continue 
+            else:
+                return f"Brain Error: {error_msg}"
+    
+    return "❌ All AI Models are busy."
 
 def check_mail():
     print("Connecting to Gmail...")
@@ -72,17 +90,14 @@ def check_mail():
         mail.select("inbox")
 
         status, messages = mail.search(None, 'UNSEEN')
-        
         if not messages or messages[0] == b'':
             print("No new mail.")
             return
 
         email_ids = messages[0].split()
+        recent_email_ids = email_ids[-20:] # Check last 20
         
-        # Increased limit to 20 to catch replies hidden behind spam
-        recent_email_ids = email_ids[-20:] 
-        
-        print(f"Checking {len(recent_email_ids)} recent unread emails...")
+        print(f"Checking {len(recent_email_ids)} emails...")
 
         for e_id in recent_email_ids:
             try:
@@ -96,21 +111,18 @@ def check_mail():
                             subject = subject.decode(encoding if encoding else "utf-8")
                         sender = msg.get("From") or ""
 
-                        # --- 🛡️ 1. VIP RULE: REPLIES BYPASS FILTERS ---
+                        # --- VIP RULE ---
                         is_reply = "re:" in subject.lower()
                         is_junk = False
-                        
-                        # Only run junk check if it is NOT a reply
                         if not is_reply:
                             for word in IGNORE_LIST:
                                 if word.lower() in sender.lower() or word.lower() in subject.lower():
-                                    print(f"🗑️ Junk detected ({word}): {subject}")
+                                    print(f"🗑️ Junk: {subject}")
                                     is_junk = True
                                     break
-                        
                         if is_junk: continue
 
-                        # --- 2. GET BODY ---
+                        # Get Body
                         body = ""
                         if msg.is_multipart():
                             for part in msg.walk():
@@ -122,22 +134,16 @@ def check_mail():
                             payload = msg.get_payload(decode=True)
                             if payload: body = payload.decode("utf-8", errors="ignore")
 
-                        print(f"✅ Analyzing: {sender} | Subject: {subject}")
+                        print(f"✅ Analyzing: {sender}")
+                        ai_draft = ask_brain_smart(body, sender, subject)
                         
-                        # --- 3. ASK BRAIN ---
-                        # We now pass the Subject to the brain so it knows if it's a "Re:"
-                        ai_draft = ask_brain(body, sender, subject)
-                        
-                        if "IGNORE" in ai_draft:
-                            print("🤖 AI said IGNORE.")
-                            continue
+                        if "IGNORE" in ai_draft: continue
 
-                        # --- 4. SEND ALERT ---
                         report = (
-                            f"🔔 NEW CLIENT EMAIL!\n"
+                            f"🔔 NEW CLIENT REPLY!\n"
                             f"From: {sender}\n"
                             f"Subject: {subject}\n\n"
-                            f"📝 Suggested Reply:\n{ai_draft}"
+                            f"📝 Draft Reply:\n{ai_draft}"
                         )
                         send_telegram(report)
                         
@@ -153,4 +159,4 @@ def check_mail():
 
 if __name__ == "__main__":
     check_mail()
-                        
+    
