@@ -21,10 +21,11 @@ IGNORE_LIST = [
 
 # --- 🧠 HYBRID ENGINE ---
 MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "mixtral-8x7b-32768",
-    "gemma2-9b-it"
+     "openai/gpt-oss-120b",            # 1. HUGE LIMIT (250k tokens/day)
+    "llama-3.3-70b-versatile",        # 2. High Quality (100k tokens)
+    "moonshotai/kimi-k2-instruct-0905", # 3. User Requested
+    "qwen-2.5-32b",                   # 4. Coding Expert (Standard Groq ID)
+    "llama-3.1-8b-instant"            # 5. Speed Backup
 ]
 
 # Load Secrets
