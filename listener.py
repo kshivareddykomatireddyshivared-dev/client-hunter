@@ -98,6 +98,7 @@ FOR CODES 3 & 4: After the code, write a SHORT 2-sentence reply that:
 - Answers their question briefly
 - Guides them to WhatsApp for details: {WHATSAPP_LINK}
 - Keep it under 50 words, professional tone
+- Don't forget to send my {WHATSAPP_LINK} and {PORTFOLIO_LINK} if client intrested.
 
 EXAMPLES:
 Input: "What are your rates?"
