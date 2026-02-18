@@ -93,6 +93,7 @@ OUTPUT ONE OF THESE EXACT CODES:
 2. "IGNORE" - Automated email (Amazon, tracking, bills, newsletters, receipts)
 3. "INTERESTED" - They asked questions, want pricing, said "tell me more", curious, positive
 4. "NEUTRAL" - Polite but non-committal ("thanks for reaching out", "I'll think about it")
+5. and don't keep email too short or long keep it very profficinal 
 
 FOR CODES 3 & 4: After the code, write a SHORT 2-sentence reply that:
 - Answers their question briefly
