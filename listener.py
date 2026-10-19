@@ -14,8 +14,8 @@ from groq import Groq
 # --- CONFIGURATION ---
 
 MY_NAME = "Shiva"
-WHATSAPP_LINK = "https://wa.me/919391577137?text=Hi%20Shiva,%20I%20am%20interested%20in%20scriptwriting"
-PORTFOLIO_LINK = "https://drive.google.com/drive/folders/1SIbyVhHF9RuasqP0zcYMjX6DeFypSPvg"
+WHATSAPP_LINK = "https://wa.me/"
+PORTFOLIO_LINK = "https://drive.google.com/drive/folder/#####"
 
 # --- 🛡️ JUNK FILTER ---
 
